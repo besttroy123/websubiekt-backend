@@ -357,6 +357,10 @@ function mergeData() {
             })
             .filter(Boolean)
         : [];
+      
+      // Łączenie nazwy produktu z opcjami
+      const opcjeText = opcje.join(', ');
+      const pelna_nazwa = opcjeText ? `${product.name}, ${opcjeText}` : product.name;
 
       return {
         id_stock: stock.id,
@@ -365,10 +369,9 @@ function mergeData() {
         reference: variant.reference,
         ean13: variant.ean13,
         cena_wariant: variantPrice,
-        opcje: opcje.join(', '),
         stan_magazynowy: quantity,
         cena_produktu: productPrice,
-        nazwa_produktu: product.name,
+        nazwa_produktu: pelna_nazwa,
         cena_sprzedazy_brutto: cenaSprzedazyBrutto
       };
     }
@@ -390,7 +393,6 @@ function mergeData() {
       reference: product.reference,
       ean13: product.ean13,
       cena_produktu: productPrice,
-      opcje: '',
       stan_magazynowy: quantity,
       nazwa_produktu: product.name,
       cena_sprzedazy_brutto: finalPrice
@@ -413,7 +415,6 @@ async function updateDatabase(stan_magazynowy) {
         reference VARCHAR,
         ean13 VARCHAR,
         cena_wariant DECIMAL,
-        opcje TEXT,
         stan_magazynowy INT,
         cena_produktu DECIMAL,
         nazwa_produktu TEXT,
@@ -421,7 +422,7 @@ async function updateDatabase(stan_magazynowy) {
         cena_zakupu_netto DECIMAL,
         cena_zakupu_brutto DECIMAL,
         data_ostatniej_faktury_zakupu DATE,
-        grupa_towarowa TEXT -- Dodano pole grupa_towarowa
+        grupa_towarowa TEXT
       );
     `);
 
@@ -444,7 +445,7 @@ async function updateDatabase(stan_magazynowy) {
           ...item,
           cena_zakupu_netto: matchingPrice.cena_zakupu_netto,
           cena_zakupu_brutto: matchingPrice.cena_zakupu_brutto,
-          grupa_towarowa: matchingPrice.grupa_towarowa // Dodano mapowanie grupy towarowej
+          grupa_towarowa: matchingPrice.grupa_towarowa
         };
       }
       
@@ -453,7 +454,7 @@ async function updateDatabase(stan_magazynowy) {
         ...item,
         cena_zakupu_netto: null,
         cena_zakupu_brutto: null,
-        grupa_towarowa: null // Domyślna wartość null dla grupy towarowej
+        grupa_towarowa: null
       };
     });
 
@@ -476,19 +477,18 @@ async function updateDatabase(stan_magazynowy) {
           item.reference, 
           item.ean13, 
           item.cena_wariant,
-          item.opcje, 
           item.stan_magazynowy, 
           item.cena_produktu,
           item.nazwa_produktu,
           item.cena_sprzedazy_brutto,
           item.cena_zakupu_netto,
           item.cena_zakupu_brutto,
-          item.grupa_towarowa // Dodano wartość grupa_towarowa
+          item.grupa_towarowa
         );
         
         const placeholders = [];
-        // Zwiększono liczbę placeholderów do 14
-        for (let j = 0; j < 14; j++) { 
+        // Zmniejszono liczbę placeholderów do 13 (usunięto opcje)
+        for (let j = 0; j < 13; j++) { 
           placeholders.push(`$${valueCounter++}`);
         }
         valueStrings.push(`(${placeholders.join(', ')})`);
@@ -497,8 +497,8 @@ async function updateDatabase(stan_magazynowy) {
       // Wykonanie masowego wstawienia
       const query = `
         INSERT INTO stan_magazynowy (
-          id_stock, id_wariantu, id_produktu, reference, ean13, cena_wariant, opcje, stan_magazynowy, 
-          cena_produktu, nazwa_produktu, cena_sprzedazy_brutto, cena_zakupu_netto, cena_zakupu_brutto, grupa_towarowa -- Dodano kolumnę grupa_towarowa
+          id_stock, id_wariantu, id_produktu, reference, ean13, cena_wariant, stan_magazynowy, 
+          cena_produktu, nazwa_produktu, cena_sprzedazy_brutto, cena_zakupu_netto, cena_zakupu_brutto, grupa_towarowa
         ) VALUES ${valueStrings.join(', ')}
       `;
       
