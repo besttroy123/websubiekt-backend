@@ -428,7 +428,8 @@ async function updateDatabase(stan_magazynowy) {
 
     // Pobieranie danych o cenach zakupu z tabeli product_prices
     const productPricesResult = await client.query(`
-      SELECT tw_symbol as ean13, ob_cenanetto as cena_zakupu_netto, ob_cenabrutto as cena_zakupu_brutto, grt_nazwa as grupa_towarowa
+      SELECT tw_symbol as ean13, tw_nazwa as nazwa_produktu, ob_cenanetto as cena_zakupu_netto, 
+             ob_cenabrutto as cena_zakupu_brutto, grt_nazwa as grupa_towarowa
       FROM product_prices
     `);
     
@@ -458,43 +459,81 @@ async function updateDatabase(stan_magazynowy) {
       };
     });
 
+    // Znajdź produkty z product_prices, które nie mają odpowiednika w stan_magazynowy
+    const existingEans = new Set(updatedStanMagazynowy.map(item => item.ean13));
+    const additionalProducts = productPrices
+      .filter(price => !existingEans.has(price.ean13) && price.ean13)
+      .map((price, index) => {
+        // Tworzymy nowy rekord dla produktu z product_prices
+        return {
+          id_stock: -1000000 - index, // Używamy ujemnych ID, aby uniknąć konfliktów
+          id_wariantu: null,
+          id_produktu: null,
+          reference: null,
+          ean13: price.ean13,
+          cena_wariant: null,
+          stan_magazynowy: 0, // Domyślnie 0, bo nie znamy stanu magazynowego
+          cena_produktu: price.cena_zakupu_netto, // Używamy ceny zakupu jako ceny produktu
+          nazwa_produktu: price.nazwa_produktu,
+          cena_sprzedazy_brutto: null, // Ustawiamy NULL zamiast ceny zakupu brutto
+          cena_zakupu_netto: price.cena_zakupu_netto,
+          cena_zakupu_brutto: price.cena_zakupu_brutto,
+          grupa_towarowa: price.grupa_towarowa
+        };
+      });
+
+    // Łączymy produkty z PrestaShop z dodatkowymi produktami z product_prices
+    const allProducts = [...updatedStanMagazynowy, ...additionalProducts];
+
     // Najpierw usuwamy wszystkie istniejące dane
     await client.query('TRUNCATE TABLE stan_magazynowy');
 
-    // Przygotowanie danych do masowego wstawienia
-    if (updatedStanMagazynowy.length > 0) {
-      // Tworzymy zapytanie z wieloma wartościami
+    // Podziel produkty na partie po 2000 elementów
+    const batchSize = 2000;
+    const batches = [];
+    
+    for (let i = 0; i < allProducts.length; i += batchSize) {
+      batches.push(allProducts.slice(i, i + batchSize));
+    }
+    
+    console.log(`Podzielono ${allProducts.length} produktów na ${batches.length} partii po maksymalnie ${batchSize} elementów`);
+    
+    // Przetwarzaj każdą partię osobno
+    let totalInserted = 0;
+    
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
       const values = [];
       const valueStrings = [];
       let valueCounter = 1;
-
-      for (let i = 0; i < updatedStanMagazynowy.length; i++) {
-        const item = updatedStanMagazynowy[i];
+      
+      for (let i = 0; i < batch.length; i++) {
+        const item = batch[i];
+        // Upewnij się, że wszystkie wartości są zdefiniowane
         values.push(
-          item.id_stock, 
-          item.id_wariantu, 
-          item.id_produktu, 
-          item.reference, 
-          item.ean13, 
-          item.cena_wariant,
-          item.stan_magazynowy, 
-          item.cena_produktu,
-          item.nazwa_produktu,
-          item.cena_sprzedazy_brutto,
-          item.cena_zakupu_netto,
-          item.cena_zakupu_brutto,
-          item.grupa_towarowa
+          item.id_stock || null, 
+          item.id_wariantu || null, 
+          item.id_produktu || null, 
+          item.reference || null, 
+          item.ean13 || null, 
+          item.cena_wariant || null,
+          item.stan_magazynowy || 0, 
+          item.cena_produktu || null,
+          item.nazwa_produktu || '',
+          item.cena_sprzedazy_brutto || null,
+          item.cena_zakupu_netto || null,
+          item.cena_zakupu_brutto || null,
+          item.grupa_towarowa || null
         );
         
         const placeholders = [];
-        // Zmniejszono liczbę placeholderów do 13 (usunięto opcje)
         for (let j = 0; j < 13; j++) { 
           placeholders.push(`$${valueCounter++}`);
         }
         valueStrings.push(`(${placeholders.join(', ')})`);
       }
-
-      // Wykonanie masowego wstawienia
+      
+      // Wykonanie masowego wstawienia dla tej partii
       const query = `
         INSERT INTO stan_magazynowy (
           id_stock, id_wariantu, id_produktu, reference, ean13, cena_wariant, stan_magazynowy, 
@@ -503,9 +542,11 @@ async function updateDatabase(stan_magazynowy) {
       `;
       
       await client.query(query, values);
+      totalInserted += batch.length;
+      console.log(`Zapisano partię ${batchIndex + 1}/${batches.length} (${batch.length} rekordów)`);
     }
     
-    console.log(`Zapisano ${updatedStanMagazynowy.length} rekordów do bazy danych w jednej operacji`);
+    console.log(`Zapisano łącznie ${totalInserted} rekordów do bazy danych w ${batches.length} operacjach (${updatedStanMagazynowy.length} z PrestaShop i ${additionalProducts.length} dodatkowych z product_prices)`);
   } catch (err) {
     console.error("Error while updating database:", err);
     throw err;
