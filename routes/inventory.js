@@ -360,7 +360,7 @@ function mergeData() {
       
       // Łączenie nazwy produktu z opcjami
       const opcjeText = opcje.join(', ');
-      const pelna_nazwa = opcjeText ? `${product.name}, ${opcjeText}` : product.name;
+      const pelna_nazwa = opcjeText ? `${product.name} ${opcjeText}` : product.name;
 
       return {
         id_stock: stock.id,
