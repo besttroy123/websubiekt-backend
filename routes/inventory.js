@@ -422,16 +422,14 @@ async function updateDatabase(stan_magazynowy) {
         cena_zakupu_netto DECIMAL,
         cena_zakupu_brutto DECIMAL,
         data_ostatniej_faktury_zakupu DATE,
-        grupa_towarowa TEXT,
-        tc_CenaBrutto1 DECIMAL,
-        st_Stan INT
+        grupa_towarowa TEXT
       );
     `);
 
     // Pobieranie danych z tabeli product_prices
     const productPricesResult = await client.query(`
       SELECT tw_symbol as ean13, tw_nazwa as nazwa_produktu, ob_cenanetto as cena_zakupu_netto, 
-             ob_cenabrutto as cena_zakupu_brutto, grt_nazwa as grupa_towarowa, tc_CenaBrutto1, st_Stan
+             ob_cenabrutto as cena_zakupu_brutto, grt_nazwa as grupa_towarowa, tc_CenaBrutto1 as cena_produktu, st_Stan as stan_magazynowy
       FROM product_prices
     `);
     
@@ -450,7 +448,7 @@ async function updateDatabase(stan_magazynowy) {
           cena_zakupu_brutto: matchingPrice.cena_zakupu_brutto,
           grupa_towarowa: matchingPrice.grupa_towarowa,
           tc_CenaBrutto1: matchingPrice.tc_cenabrutto1,
-          st_Stan: matchingPrice.st_stan
+          st_Stan: parseInt(matchingPrice.st_stan) || 0  // Konwersja na liczbę całkowitą
         };
       }
       
@@ -478,15 +476,13 @@ async function updateDatabase(stan_magazynowy) {
           reference: null,
           ean13: price.ean13,
           cena_wariant: null,
-          stan_magazynowy: 0, // Domyślnie 0, bo nie znamy stanu magazynowego
+          stan_magazynowy: parseInt(price.stan_magazynowy) || 0, // Konwersja na liczbę całkowitą
           cena_produktu: price.cena_zakupu_netto, // Używamy ceny zakupu jako ceny produktu
           nazwa_produktu: price.nazwa_produktu,
-          cena_sprzedazy_brutto: null, // Ustawiamy NULL zamiast ceny zakupu brutto
+          cena_sprzedazy_brutto: price.cena_produktu, // Ustawiamy NULL zamiast ceny zakupu brutto
           cena_zakupu_netto: price.cena_zakupu_netto,
           cena_zakupu_brutto: price.cena_zakupu_brutto,
-          grupa_towarowa: price.grupa_towarowa,
-          tc_CenaBrutto1: price.tc_cenabrutto1,
-          st_Stan: price.st_stan
+          grupa_towarowa: price.grupa_towarowa
         };
       });
 
@@ -525,19 +521,17 @@ async function updateDatabase(stan_magazynowy) {
           item.reference || null, 
           item.ean13 || null, 
           item.cena_wariant || null,
-          item.stan_magazynowy || 0, 
+          parseInt(item.stan_magazynowy) || 0, // Konwersja na liczbę całkowitą
           item.cena_produktu || null,
           item.nazwa_produktu || '',
           item.cena_sprzedazy_brutto || null,
           item.cena_zakupu_netto || null,
           item.cena_zakupu_brutto || null,
-          item.grupa_towarowa || null,
-          item.tc_CenaBrutto1 || null,
-          item.st_Stan || null
+          item.grupa_towarowa || null
         );
         
         const placeholders = [];
-        for (let j = 0; j < 15; j++) { // Zwiększono liczbę parametrów z 13 na 15
+        for (let j = 0; j < 13; j++) { 
           placeholders.push(`$${valueCounter++}`);
         }
         valueStrings.push(`(${placeholders.join(', ')})`);
@@ -547,8 +541,7 @@ async function updateDatabase(stan_magazynowy) {
       const query = `
         INSERT INTO stan_magazynowy (
           id_stock, id_wariantu, id_produktu, reference, ean13, cena_wariant, stan_magazynowy, 
-          cena_produktu, nazwa_produktu, cena_sprzedazy_brutto, cena_zakupu_netto, cena_zakupu_brutto, grupa_towarowa,
-          tc_CenaBrutto1, st_Stan
+          cena_produktu, nazwa_produktu, cena_sprzedazy_brutto, cena_zakupu_netto, cena_zakupu_brutto, grupa_towarowa
         ) VALUES ${valueStrings.join(', ')}
       `;
       
